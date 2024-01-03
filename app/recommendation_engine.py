@@ -1,8 +1,12 @@
+import logging
 import pandas as pd
 import numpy as np
 from scipy.spatial.distance import pdist, squareform
 from .data_loader import load_data, save_new_user_data
 from .config import MIN_RATINGS_COUNT
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
 
 # Preprocessing functions
 def preprocess_personality_data(data):
@@ -55,24 +59,28 @@ def filter_movies_by_rating_count(ratings_data, movies_data):
     frequently_rated_movies = ratings_count[ratings_count >= MIN_RATINGS_COUNT].index
     return movies_data[movies_data['movieId'].isin(frequently_rated_movies)]
 
-def recommend_movies_for_new_user(new_user_id, new_user_data, personality_data, ratings_data, movies_data, k, top_n=10):
-    if new_user_id not in personality_data['userid'].values:
-        new_user_data['userid'] = new_user_id
-        save_new_user_data(new_user_data)
-        personality_data, ratings_data, movies_data = load_data()  
-    
+def recommend_movies_for_new_user(new_user_id, new_user_data, updated_personality_data, ratings_data, movies_data, k, top_n=10):
+    # Use the updated personality data directly to create user profiles
+    user_profiles = updated_personality_data.set_index('userid')
+
+    # No need to add the new user data to the personality data again
+    # as it is already included in updated_personality_data
+
     # Filter movies based on rating count
     filtered_movies_data = filter_movies_by_rating_count(ratings_data, movies_data)
 
-    user_profiles = create_user_profiles()
+    # Find unrated movies for the new user
     unrated_movies = find_unrated_movies(new_user_id, ratings_data, filtered_movies_data)
     top_k_similarities = calculate_similarity(user_profiles, k)
+
+    # Predict ratings for unrated movies
     predicted_ratings = predict_movie_ratings(new_user_id, unrated_movies, top_k_similarities, ratings_data, k)
 
+    # Sort the predicted ratings and select the top_n recommendations
     top_predictions = sorted(predicted_ratings, key=lambda x: x[1], reverse=True)[:top_n]
     user_recommendations = [
         ( 
-            int(movie_id),  # Convert movie_id to int
+            int(movie_id),
             filtered_movies_data[filtered_movies_data['movieId'] == movie_id]['title'].iloc[0], 
             rating
         ) 
@@ -81,12 +89,16 @@ def recommend_movies_for_new_user(new_user_id, new_user_data, personality_data, 
     
     return user_recommendations
 
+
 def recommend_movies_for_old_user(user_id, personality_data, ratings_data, movies_data, k, top_n=10):
-    if user_id in personality_data['userid']. values:
+    if user_id in personality_data['userid'].values:
         existing_user_data = personality_data[personality_data['userid'] == user_id].iloc[0].to_dict()
+        # Pass the original personality data as it is for existing users
         return recommend_movies_for_new_user(user_id, existing_user_data, personality_data, ratings_data, movies_data, k, top_n)
     else:
+        logging.error(f"User ID {user_id} not found in personality data.")
         return None
+
 
 
 def get_top_genres_from_movies(recommended_movies, movies_data, num_genres):

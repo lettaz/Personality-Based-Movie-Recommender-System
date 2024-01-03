@@ -10,11 +10,11 @@ def init_routes(app):
     @app.route('/api/users/new', methods=['POST'])
     def create_new_user():
         new_user_data = request.json
-        # Generate a new user_id and remove dashes
         user_id = str(uuid.uuid4()).replace('-', '')
         new_user_data['userid'] = user_id
-        save_new_user_data(new_user_data)
+        updated_personality_data = save_new_user_data(new_user_data)
         return jsonify({"user_id": user_id}), 201
+
 
     @app.route('/api/personality/<user_id>', methods=['GET'])
     def get_personality(user_id):

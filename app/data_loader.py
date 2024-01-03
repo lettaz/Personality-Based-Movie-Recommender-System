@@ -16,8 +16,10 @@ def save_new_user_data(new_user_data):
     # Convert new_user_data to DataFrame
     new_user_df = pd.DataFrame([new_user_data])
     # Append new_user_df to personality_data
-    personality_data = pd.concat([personality_data, new_user_df], ignore_index=True)
-    personality_data.to_csv(PERSONALITY_DATA_FILE, index=False)
+    updated_personality_data = pd.concat([personality_data, new_user_df], ignore_index=True)
+    updated_personality_data.to_csv(PERSONALITY_DATA_FILE, index=False)
+    return updated_personality_data
+
 
 
 def update_user_data(updated_user_data):
