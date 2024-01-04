@@ -40,31 +40,41 @@ def find_unrated_movies(user_id, ratings_data, movies_data):
     return unrated_movies
 
 def predict_movie_ratings(user_id, unrated_movies, top_k_similarities, ratings_data, k):
-    top_k_users = top_k_similarities.loc[user_id].index
+    top_k_users = top_k_similarities.loc[user_id].nlargest(k + 1).iloc[1:].index
     filtered_ratings = ratings_data[ratings_data['useri'].isin(top_k_users)]
-    predictions = []
+
+    collaborative_predictions = []
+    fallback_predictions = []
+
     for movie_id in unrated_movies['movieId']:
         relevant_ratings = filtered_ratings[filtered_ratings['movie_id'] == movie_id]['rating']
         if not relevant_ratings.empty:
-            predicted_rating = relevant_ratings.mean()
+            weighted_rating = np.average(relevant_ratings, weights=range(1, len(relevant_ratings) + 1))
+            collaborative_predictions.append((movie_id, weighted_rating))
         else:
             all_users_relevant_ratings = ratings_data[ratings_data['movie_id'] == movie_id]['rating']
             predicted_rating = all_users_relevant_ratings.mean() if not all_users_relevant_ratings.empty else np.nan
-        if not np.isnan(predicted_rating):
-            predictions.append((movie_id, predicted_rating))
-    return predictions
+            if not np.isnan(predicted_rating):
+                fallback_predictions.append((movie_id, predicted_rating))
+
+    sorted_collaborative_predictions = sorted(collaborative_predictions, key=lambda x: x[1], reverse=True)
+    sorted_fallback_predictions = sorted(fallback_predictions, key=lambda x: x[1], reverse=True)
+    combined_predictions = sorted_collaborative_predictions + sorted_fallback_predictions
+
+    return combined_predictions
+
+
+
 
 def filter_movies_by_rating_count(ratings_data, movies_data):
     ratings_count = ratings_data['movie_id'].value_counts()
     frequently_rated_movies = ratings_count[ratings_count >= MIN_RATINGS_COUNT].index
     return movies_data[movies_data['movieId'].isin(frequently_rated_movies)]
 
+
 def recommend_movies_for_new_user(new_user_id, new_user_data, updated_personality_data, ratings_data, movies_data, k, top_n=10):
     # Use the updated personality data directly to create user profiles
     user_profiles = updated_personality_data.set_index('userid')
-
-    # No need to add the new user data to the personality data again
-    # as it is already included in updated_personality_data
 
     # Filter movies based on rating count
     filtered_movies_data = filter_movies_by_rating_count(ratings_data, movies_data)
@@ -72,12 +82,17 @@ def recommend_movies_for_new_user(new_user_id, new_user_data, updated_personalit
     # Find unrated movies for the new user
     unrated_movies = find_unrated_movies(new_user_id, ratings_data, filtered_movies_data)
     top_k_similarities = calculate_similarity(user_profiles, k)
+    
+    # Get top k similar users, excluding the user itself
+    similar_users = top_k_similarities.loc[new_user_id].nlargest(k + 1).iloc[1:].index.tolist()
+    logging.info(f"Top {k} similar users for User ID {new_user_id}: {similar_users}")
 
     # Predict ratings for unrated movies
     predicted_ratings = predict_movie_ratings(new_user_id, unrated_movies, top_k_similarities, ratings_data, k)
 
     # Sort the predicted ratings and select the top_n recommendations
     top_predictions = sorted(predicted_ratings, key=lambda x: x[1], reverse=True)[:top_n]
+
     user_recommendations = [
         ( 
             int(movie_id),
